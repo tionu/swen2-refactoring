@@ -1,7 +1,5 @@
 package refactoring;
 
-import java.awt.FileDialog;
-import java.awt.Frame;
 import java.io.File;
 import java.io.IOException;
 import java.text.ParseException;
@@ -15,113 +13,99 @@ import org.jdom.Namespace;
 import org.jdom.input.SAXBuilder;
 
 public class GPX {
-	
-	private File file;
+
 	private String name;
-	private double duration;
-	private double distance;
-	private double avarageSpeed;
-	private double minutePerKm;
-	private double meanHeight;
+	private long durationMilliseconds;
+	private double distanceMeter;
 	private double maxHeight;
 	private double minHeight;
-	
-	public void selectFile() {
-		FileDialog fileDialog = new FileDialog((Frame)null, "GPX-Daeien auswählen", FileDialog.LOAD);
-		fileDialog.setMultipleMode(false);
-		fileDialog.setFile("*.gpx");
-		fileDialog.setVisible(true);
-		file = fileDialog.getFiles()[0];
+	private double heightSum;
+	private int pointsCount;
+
+	private static final SimpleDateFormat DATE_TIME_FORMAT = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'");
+
+	public GPX() {
+		distanceMeter = 0;
+		durationMilliseconds = 0;
+		maxHeight = 0;
+		minHeight = 0;
+		heightSum = 0;
+		pointsCount = 0;
 	}
-	
-	public void setFile(File file) {
-		this.file = file;
-	}
-	
-	public void readFile() throws JDOMException, IOException, ParseException {
-		SimpleDateFormat dateTimeFormat = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'");
+
+	public void parseFile(File file) throws JDOMException, IOException, ParseException {
+
 		SAXBuilder sax = new SAXBuilder();
-				
+
 		Document doc = sax.build(file);
 		Element root = doc.getRootElement();
 		Namespace namespace = root.getNamespace();
 		Element trackElement = root.getChild("trk", namespace);
 		name = trackElement.getChildText("name", namespace);
-		Date time0 = null;
-		double lat0 = 0;
-		double lon0 = 0;
-		distance = 0;
-		long durSumSec = 0;
-		maxHeight = 0;
-		minHeight = 0;
-		meanHeight = 0;
-		double heightSum = 0;
-		int pntCnt = 0;
+		TrackPoint trackPointLast;
 
-		for(Object trkseg : root.getChild("trk", namespace).getChildren("trkseg", namespace)){
-			time0 = null;
-			for(Object trkptObj : ((Element)trkseg).getChildren("trkpt", namespace)){
-				pntCnt++;
-				Element trkpt = (Element)trkptObj;
-				Date time = dateTimeFormat.parse(trkpt.getChildText("time", namespace));
-				double lat = Double.valueOf(trkpt.getAttributeValue("lat"));
-				double lon = Double.valueOf(trkpt.getAttributeValue("lon"));
-				double latRad = lat / 180 * Math.PI;
-				double lonRad = lon / 180 * Math.PI;
-				double ele = Double.valueOf(trkpt.getChildText("ele", namespace));
-				if(time0 == null){
-					time0 = time;
-					lat0 = latRad;
-					lon0 = lonRad;
+		for (Object trkseg : trackElement.getChildren("trkseg", namespace)) {
+			trackPointLast = null;
+			for (Object trkptObj : ((Element) trkseg).getChildren("trkpt", namespace)) {
+				pointsCount++;
+
+				TrackPoint trackPoint = parseXmlTrackPoint((Element) trkptObj);
+
+				if (trackPointLast == null) {
+					trackPointLast = trackPoint;
 					continue;
 				}
-				if(time0.equals(time) || (lat0 == latRad && lon0 == lonRad))
-					continue;						
-				
-				double distDelta = Math.acos(Math.sin(lat0) * Math.sin(latRad) + Math.cos(lat0) * Math.cos(latRad) * Math.cos(lonRad - lon0)) * 6378137;
-				distance += distDelta;
-				long durDelta = (time.getTime() - time0.getTime()) / 1000;
-				durSumSec += durDelta;
-				
-				heightSum += ele;
-				if(ele > maxHeight)
-					maxHeight = ele;
-				if(ele < minHeight || minHeight == 0)
-					minHeight = ele;
+				if (trackPointLast.equals(trackPoint))
+					continue;
 
-				time0 = time;
-				lat0 = latRad;
-				lon0 = lonRad;
+				distanceMeter += trackPoint.calculateDistance(trackPointLast);
+				durationMilliseconds += trackPoint.getTimestamp().getTime() - trackPointLast.getTimestamp().getTime();
+				heightSum += trackPoint.getElevation();
+
+				if (trackPoint.getElevation() > maxHeight)
+					maxHeight = trackPoint.getElevation();
+				if (trackPoint.getElevation() < minHeight || minHeight == 0)
+					minHeight = trackPoint.getElevation();
+
+				trackPointLast = trackPoint;
 			}
 		}
-		duration = durSumSec / 60; // Dauer in Minuten
-		avarageSpeed = (distance / 1000) / (duration / 60); // Geschwindigkeit in km/h
-		minutePerKm = duration / (distance / 1000); // min/km
-		meanHeight = heightSum / pntCnt;
+	}
+
+	private TrackPoint parseXmlTrackPoint(Element xmlTrackPoint) throws ParseException {
+		double latitude = Double.valueOf(xmlTrackPoint.getAttributeValue("lat")) / 180 * Math.PI;
+		double longitude = Double.valueOf(xmlTrackPoint.getAttributeValue("lon")) / 180 * Math.PI;
+		Date timestamp = DATE_TIME_FORMAT.parse(xmlTrackPoint.getChildText("time", xmlTrackPoint.getNamespace()));
+		double elevation = Double.valueOf(xmlTrackPoint.getChildText("ele", xmlTrackPoint.getNamespace()));
+		return new TrackPoint(latitude, longitude, timestamp, elevation);
 	}
 
 	public String getName() {
 		return name;
 	}
 
-	public double getDuration() {
-		return duration;
+	public long getDuration() {
+		return durationMilliseconds;
+	}
+
+	public double getDurationMinutes() {
+		return (double) durationMilliseconds / 1000 / 60;
 	}
 
 	public double getDistance() {
-		return distance;
+		return distanceMeter;
 	}
 
-	public double getAvarageSpeed() {
-		return avarageSpeed;
+	public double getAvarageSpeedKmH() {
+		return (distanceMeter / 1000) / (durationMilliseconds / (1000 * 60 * 60));
 	}
 
 	public double getMinutePerKm() {
-		return minutePerKm;
+		return (durationMilliseconds / 1000 / 60) / (distanceMeter / 1000);
 	}
 
 	public double getMeanHeight() {
-		return meanHeight;
+		return heightSum / pointsCount;
 	}
 
 	public double getMaxHeight() {
@@ -132,17 +116,4 @@ public class GPX {
 		return minHeight;
 	}
 
-	public static void main(String[] args) throws JDOMException, IOException, ParseException {
-		GPX gpx = new GPX();
-		gpx.selectFile();
-		gpx.readFile();
-		System.out.println("Track-Name: " + gpx.getName());
-		System.out.println("Distanz: " + gpx.getDistance());
-		System.out.println("Dauer: " + gpx.getDuration());
-		System.out.println("Durchschnittsgeschwindigkeit: " + gpx.getAvarageSpeed());
-		System.out.println("Tempo: " + gpx.getMinutePerKm());
-		System.out.println("Durschnittshöhe: " + gpx.getMeanHeight());
-		System.out.println("Maximale Höhe: " + gpx.getMaxHeight());
-		System.out.println("Minimale Höhe: " + gpx.getMinHeight());
-	}
 }

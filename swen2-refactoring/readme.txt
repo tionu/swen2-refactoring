@@ -10,7 +10,7 @@ Refactorn Sie den hier angegebenen Code. Achten Sie dabei insbesondere darauf, d
 
 - kein duplizierter Code vorhanden ist
 
-- möglichst nur die klasseneigenen Attriute zur Berechnung verwendet werden
+- möglichst nur die klasseneigenen Attribute zur Berechnung verwendet werden
 
 - möglichst keinei case..switch-Anweisungen verwendet werden
 
